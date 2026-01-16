@@ -1,0 +1,20 @@
+{
+  "name": "email-verifier-worker",
+  "version": "1.0.0",
+  "description": "VPS Worker for email verification using Playwright",
+  "type": "module",
+  "main": "worker.js",
+  "scripts": {
+    "start": "node worker.js",
+    "install-browsers": "npx playwright install chromium",
+    "test": "node worker.js --test"
+  },
+  "dependencies": {
+    "playwright": "^1.48.0",
+    "axios": "^1.7.0",
+    "dotenv": "^16.4.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
