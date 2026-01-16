@@ -1,16 +1,22 @@
-# Email Verifier - Office365 & Gmail Login-Based Verification
+# Email Verifier - Office365 & Gmail Email Existence Verification
 
-A production-ready email verification system that tests Office365 and Gmail accounts by attempting actual logins using headless browser automation.
+A production-ready email verification system that checks if Office365 and Gmail email accounts **exist** by testing login page responses. **No passwords required** - just email addresses!
 
 ## 🎯 Project Overview
 
-**Goal**: Verify email credentials by performing real login attempts to Office365 and Gmail, classifying any authentication failures as "strong bounce".
+**Goal**: Verify if email addresses exist by attempting to enter them on Office365/Gmail login pages and analyzing the response.
+
+**How It Works**: 
+- User submits email addresses (NO passwords needed)
+- System attempts to enter email on login page
+- If password field appears → Email EXISTS (Valid)
+- If "account not found" error → Email DOESN'T EXIST (Strong Bounce)
 
 **Architecture**:
 - **Cloudflare Pages Frontend**: Web UI for submitting emails and viewing results
 - **Cloudflare Workers API**: Queue management and result storage
 - **Cloudflare D1 Database**: SQLite-based storage for queue and results
-- **VPS Worker Service**: Playwright-based automation for login verification
+- **VPS Worker Service**: Playwright-based automation for email existence checks
 
 ## 🌐 URLs
 
@@ -23,7 +29,7 @@ A production-ready email verification system that tests Office365 and Gmail acco
 ### Database Tables
 
 **1. verification_queue**
-- Stores email verification jobs
+- Stores email verification jobs (email only, no password)
 - Status: pending → processing → completed
 - Result: valid | invalid | strong_bounce | error
 
@@ -38,27 +44,28 @@ A production-ready email verification system that tests Office365 and Gmail acco
 ### Data Flow
 
 ```
-User → Frontend → API → D1 Queue → VPS Worker → Playwright → Login Test → Result → D1 → Frontend
+User → Frontend → API → D1 Queue → VPS Worker → Playwright → Login Page Test → Result → D1 → Frontend
 ```
 
-1. User submits email:password pairs via web interface
+1. User submits email addresses (just emails, no passwords!)
 2. API validates and adds to verification_queue (status: pending)
 3. VPS worker polls queue for pending jobs
-4. Worker launches headless browser and attempts login
+4. Worker launches headless browser and enters email on login page
 5. Result classification:
-   - **valid**: Successfully authenticated
-   - **invalid**: Login rejected (wrong password)
-   - **strong_bounce**: Account doesn't exist or blocked
+   - **valid**: Password field appeared (account exists)
+   - **strong_bounce**: "Account not found" error (doesn't exist)
+   - **invalid**: Could not determine
    - **error**: Technical issue during verification
 6. Result stored in database and displayed in UI
 
 ## 🚀 Features
 
 ### Completed Features
-✅ Office365 email verification via login
-✅ Gmail email verification via login
+✅ Office365 email existence verification
+✅ Gmail email existence verification
+✅ **No passwords required** - just email addresses
 ✅ Real-time status dashboard with statistics
-✅ Bulk email submission (paste multiple email:password pairs)
+✅ Bulk email submission (paste multiple emails)
 ✅ Queue-based processing system
 ✅ VPS worker with Playwright automation
 ✅ API token authentication for workers
@@ -66,12 +73,12 @@ User → Frontend → API → D1 Queue → VPS Worker → Playwright → Login T
 ✅ Auto-refresh results (5-second interval)
 ✅ Clean, responsive UI with Tailwind CSS
 ✅ RESTful API for worker integration
+✅ Duplicate detection (won't queue same email twice)
 
 ### Features Not Yet Implemented
 ⏳ Multi-threaded worker support (currently single-threaded)
 ⏳ Proxy rotation for better success rate
 ⏳ CAPTCHA solving integration
-⏳ 2FA/MFA handling
 ⏳ Export results to CSV/Excel
 ⏳ Scheduled batch verification
 ⏳ Email notification on completion
@@ -84,7 +91,7 @@ User → Frontend → API → D1 Queue → VPS Worker → Playwright → Login T
 
 **POST /api/verify**
 - Submit emails for verification
-- Body: `{ emails: [{ email, password }] }`
+- Body: `{ emails: ["email1@domain.com", "email2@domain.com"] }`
 - Returns: Queue status and job IDs
 
 **GET /api/status**
@@ -103,7 +110,7 @@ User → Frontend → API → D1 Queue → VPS Worker → Playwright → Login T
 **GET /api/worker/next**
 - Get next pending job from queue
 - Headers: `X-API-Token: your-token`
-- Returns: Job object or null
+- Returns: Job object with email and provider
 
 **POST /api/worker/result**
 - Submit verification result
@@ -122,33 +129,12 @@ User → Frontend → API → D1 Queue → VPS Worker → Playwright → Login T
 - **Worker**: Node.js, Playwright
 - **Deployment**: Cloudflare Pages, VPS (for worker)
 
-## 📦 Project Structure
-
-```
-webapp/
-├── src/
-│   └── index.tsx              # Main Hono application
-├── public/static/
-│   └── app.js                 # Frontend JavaScript
-├── vps-worker/
-│   ├── worker.js              # VPS worker service
-│   ├── package.json           # Worker dependencies
-│   ├── .env.example           # Worker configuration
-│   └── README.md              # Worker setup guide
-├── migrations/
-│   └── 0001_initial_schema.sql # Database schema
-├── seed.sql                   # Initial data (API token)
-├── ecosystem.config.cjs       # PM2 configuration
-├── wrangler.jsonc             # Cloudflare configuration
-└── package.json               # Dependencies
-```
-
 ## 🚦 Getting Started
 
 ### Prerequisites
 - Node.js 18+
 - Cloudflare account
-- VPS with 2GB+ RAM (for worker)
+- **VPS with 2GB+ RAM** (for worker - any standard VPS, no special port 25 needed)
 
 ### Local Development
 
@@ -176,12 +162,7 @@ pm2 start ecosystem.config.cjs
 
 ### VPS Worker Setup
 
-See detailed instructions in `vps-worker/README.md`:
-
-1. Upload worker files to VPS
-2. Install dependencies and Playwright
-3. Configure `.env` with API endpoint and token
-4. Run as systemd service or PM2
+See detailed instructions in `vps-worker/README.md`.
 
 **Quick start:**
 ```bash
@@ -193,18 +174,70 @@ cp .env.example .env
 npm start
 ```
 
+## 🖥️ VPS Provider Options
+
+### What You Need
+- **Standard VPS** (not specialized for email - any provider works!)
+- **NO port 25 required** (we're not sending emails)
+- **2GB+ RAM** for browser automation
+- **2+ CPU cores** recommended
+- **Ubuntu 22.04 LTS** or similar
+
+### Recommended VPS Providers
+
+| Provider | Starting Price | Best For | Link |
+|----------|---------------|----------|------|
+| **Contabo** | $4.99/mo | Budget-friendly, high specs | contabo.com |
+| **Hetzner** | €4.51/mo | European data centers, great price/performance | hetzner.com |
+| **DigitalOcean** | $6/mo | Easy to use, good documentation | digitalocean.com |
+| **Vultr** | $6/mo | Global locations, hourly billing | vultr.com |
+| **Linode (Akamai)** | $5/mo | Reliable, good support | linode.com |
+| **OVH** | €3.50/mo | Very cheap, EU-based | ovh.com |
+| **Hostinger** | $4.99/mo | Budget option | hostinger.com |
+| **AWS Lightsail** | $5/mo | AWS ecosystem integration | aws.amazon.com/lightsail |
+| **Google Cloud** | ~$5/mo | Google infrastructure | cloud.google.com |
+
+### Recommended Choice
+
+**For Best Value**: Contabo or Hetzner (most specs for price)  
+**For Ease of Use**: DigitalOcean or Vultr (better UI/UX)  
+**For Global Reach**: Vultr (most data center locations)  
+
+### What VPS Specs to Get
+
+**Minimum (Small batches)**:
+- 2GB RAM
+- 2 vCPU cores
+- 20GB SSD
+- Ubuntu 22.04 LTS
+
+**Recommended (Medium-large batches)**:
+- 4GB RAM
+- 4 vCPU cores
+- 40GB SSD
+- Ubuntu 22.04 LTS
+
+**Advanced (Multiple workers)**:
+- 8GB+ RAM
+- 6+ vCPU cores
+- 80GB+ SSD
+- Can run 2-3 worker instances in parallel
+
 ## 📖 User Guide
 
 ### How to Use
 
 1. **Access the web interface** at your application URL
 
-2. **Enter email:password pairs** in the text area (one per line):
+2. **Enter email addresses** in the text area (one per line):
 ```
-user@outlook.com:password123
-another@gmail.com:securepass456
-test@hotmail.com:mypassword
+user@outlook.com
+another@gmail.com
+test@hotmail.com
+someone@live.com
 ```
+
+**NO PASSWORDS NEEDED!** Just email addresses.
 
 3. **Click "Start Verification"** to queue the emails
 
@@ -214,33 +247,35 @@ test@hotmail.com:mypassword
    - Auto-refreshes every 5 seconds
 
 5. **View results**:
-   - **Valid**: Login successful ✅
-   - **Invalid**: Wrong password ❌
-   - **Strong Bounce**: Account doesn't exist or blocked 🚫
+   - **Valid**: Account exists ✅
+   - **Strong Bounce**: Account doesn't exist 🚫
+   - **Invalid**: Could not determine ❓
    - **Error**: Technical issue during verification ⚠️
 
 ### Understanding Results
 
-- **Valid**: The email and password are correct, account is accessible
-- **Invalid**: The email exists but password is wrong
-- **Strong Bounce**: The email account doesn't exist, is disabled, or blocked
+- **Valid**: The email account exists (password field appeared on login page)
+- **Strong Bounce**: The email account doesn't exist (got "account not found" error)
+- **Invalid**: Could not definitively determine (might be blocked, timeout, etc.)
 - **Error**: Automation failed (timeout, CAPTCHA, network issue)
 
 ### Tips
 
-- Use real credentials only (for authorized testing)
+- **Only use for legitimate purposes** (testing your own accounts, bulk verification with permission)
 - Start VPS worker before submitting jobs
 - Check worker logs if jobs get stuck in "processing"
 - Use proxy for better success rates with large batches
 - Clear data between test runs
 
-## 🔐 Security Notes
+## 🔐 Security & Legal Notes
 
-- **API Token**: Default token is `dev-token-change-in-production`
+- **NO passwords stored or transmitted** - only email addresses
+- **Default API Token**: `dev-token-change-in-production`
 - **Change token in production** via database update
 - **Never commit credentials** to git
 - **Use HTTPS** for production API endpoint
-- **Comply with TOS**: Only test accounts you own or have permission to test
+- **Comply with TOS**: Only test emails you have permission to verify
+- **Respect rate limits**: Don't overwhelm login servers
 
 ## 🐛 Troubleshooting
 
@@ -262,7 +297,7 @@ test@hotmail.com:mypassword
 - Add proxy if IP is blocked
 - Check worker logs for specific errors
 
-### High failure rate
+### High "invalid" rate
 - Gmail/Office365 may detect automation
 - Use residential proxies
 - Add random delays
@@ -277,10 +312,10 @@ test@hotmail.com:mypassword
    - Update API endpoint in worker
 
 2. **Setup VPS worker**:
-   - Configure production VPS
+   - Get a VPS (Contabo, Hetzner, DigitalOcean, etc.)
    - Install dependencies
-   - Setup systemd service
-   - Configure proxy for better success rate
+   - Setup systemd service or PM2
+   - Configure proxy for better success rate (optional)
 
 3. **Add features**:
    - Multi-threaded worker (parallel processing)
@@ -303,18 +338,18 @@ test@hotmail.com:mypassword
 
 ## 📄 License
 
-This is a development tool. Use responsibly and only with accounts you own or have permission to test.
+This is a development tool for email verification. Use responsibly and only with emails you have permission to verify.
 
 ## 🆘 Support
 
 For issues or questions:
 1. Check worker logs: `pm2 logs email-verifier`
-2. Check API logs: `pm2 logs email-verifier`
-3. Review VPS worker README.md
-4. Verify database migrations applied
-5. Test API endpoints with curl
+2. Review VPS worker README.md
+3. Verify database migrations applied
+4. Test API endpoints with curl
 
 ---
 
-**Last Updated**: 2026-01-16
-**Status**: ✅ Active - Ready for VPS worker deployment
+**Last Updated**: 2026-01-16  
+**Status**: ✅ Active - Ready for VPS worker deployment  
+**Method**: Email existence check (no passwords required)
