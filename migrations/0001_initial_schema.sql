@@ -2,7 +2,6 @@
 CREATE TABLE IF NOT EXISTS verification_queue (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   email TEXT NOT NULL,
-  password TEXT NOT NULL,
   provider TEXT NOT NULL CHECK(provider IN ('office365', 'gmail')),
   status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'processing', 'completed', 'failed')),
   result TEXT DEFAULT NULL CHECK(result IN ('valid', 'invalid', 'strong_bounce', 'error')),

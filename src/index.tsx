@@ -22,33 +22,48 @@ app.post('/api/verify', async (c) => {
     const { emails } = await c.req.json()
     
     if (!Array.isArray(emails) || emails.length === 0) {
-      return c.json({ error: 'Invalid input. Expected array of email objects.' }, 400)
+      return c.json({ error: 'Invalid input. Expected array of emails.' }, 400)
     }
 
     const results = []
     
-    for (const item of emails) {
-      const { email, password } = item
+    for (const email of emails) {
+      const emailStr = typeof email === 'string' ? email : email.email
       
-      if (!email || !password) {
-        results.push({ email, error: 'Email and password are required' })
+      if (!emailStr || !emailStr.includes('@')) {
+        results.push({ email: emailStr, error: 'Invalid email format' })
         continue
       }
 
       // Determine provider from email domain
       let provider = 'gmail'
-      if (email.includes('@outlook.') || email.includes('@hotmail.') || email.includes('@live.')) {
+      if (emailStr.includes('@outlook.') || emailStr.includes('@hotmail.') || emailStr.includes('@live.') || emailStr.includes('@office365.')) {
         provider = 'office365'
+      }
+
+      // Check if email already exists in queue
+      const existing = await c.env.DB.prepare(`
+        SELECT id FROM verification_queue WHERE email = ? AND status IN ('pending', 'processing')
+      `).bind(emailStr).first()
+
+      if (existing) {
+        results.push({ 
+          email: emailStr, 
+          provider,
+          status: 'already_queued',
+          id: existing.id 
+        })
+        continue
       }
 
       // Insert into verification queue
       const result = await c.env.DB.prepare(`
-        INSERT INTO verification_queue (email, password, provider, status)
-        VALUES (?, ?, ?, 'pending')
-      `).bind(email, password, provider).run()
+        INSERT INTO verification_queue (email, provider, status)
+        VALUES (?, ?, 'pending')
+      `).bind(emailStr, provider).run()
 
       results.push({ 
-        email, 
+        email: emailStr, 
         provider,
         status: 'queued',
         id: result.meta.last_row_id 
@@ -57,7 +72,7 @@ app.post('/api/verify', async (c) => {
 
     return c.json({ 
       success: true, 
-      message: `${results.length} emails queued for verification`,
+      message: `${results.filter(r => r.status === 'queued').length} emails queued for verification`,
       results 
     })
   } catch (error) {
@@ -149,7 +164,7 @@ app.get('/api/worker/next', checkApiToken, async (c) => {
   try {
     // Get oldest pending job
     const job = await c.env.DB.prepare(`
-      SELECT id, email, password, provider
+      SELECT id, email, provider
       FROM verification_queue
       WHERE status = 'pending'
       ORDER BY created_at ASC
@@ -274,7 +289,7 @@ app.get('/', (c) => {
                             <i class="fas fa-envelope-circle-check text-blue-600 mr-2"></i>
                             Email Verifier
                         </h1>
-                        <p class="text-gray-600">Office365 & Gmail Login-Based Verification</p>
+                        <p class="text-gray-600">Office365 & Gmail Email Existence Verification</p>
                     </div>
                     <div class="text-right">
                         <div class="text-sm text-gray-500">Status</div>
@@ -299,13 +314,17 @@ app.get('/', (c) => {
                 
                 <div class="mb-4">
                     <label class="block text-sm font-medium text-gray-700 mb-2">
-                        Enter emails (one per line in format: email:password)
+                        Enter email addresses (one per line)
                     </label>
                     <textarea 
                         id="email-input" 
                         class="w-full h-48 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono text-sm"
-                        placeholder="user@outlook.com:password123&#10;another@gmail.com:pass456"
+                        placeholder="user@outlook.com&#10;another@gmail.com&#10;test@hotmail.com&#10;demo@live.com"
                     ></textarea>
+                    <p class="text-xs text-gray-500 mt-2">
+                        <i class="fas fa-info-circle mr-1"></i>
+                        No passwords needed - we check if email accounts exist by testing login page responses
+                    </p>
                 </div>
 
                 <div class="flex gap-3">

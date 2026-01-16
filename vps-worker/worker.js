@@ -24,6 +24,9 @@ console.log('📡 API Endpoint:', CONFIG.apiEndpoint);
 console.log('🔄 Poll Interval:', CONFIG.pollInterval + 'ms');
 console.log('🎭 Headless Mode:', CONFIG.headless);
 console.log('🌐 Proxy:', CONFIG.proxy ? CONFIG.proxy.server : 'None');
+console.log('');
+console.log('🔍 Verification Method: Email Existence Check (No Password Required)');
+console.log('');
 
 // API Client
 const api = axios.create({
@@ -43,8 +46,8 @@ const stats = {
   startTime: Date.now()
 };
 
-// Verify Office365 email
-async function verifyOffice365(email, password) {
+// Verify Office365 email existence
+async function verifyOffice365(email) {
   const browser = await playwright.chromium.launch({
     headless: CONFIG.headless,
     proxy: CONFIG.proxy,
@@ -62,8 +65,8 @@ async function verifyOffice365(email, password) {
     console.log(`  📧 Testing Office365: ${email}`);
     
     // Navigate to Outlook login
-    await page.goto('https://outlook.office.com/mail/', { 
-      waitUntil: 'networkidle',
+    await page.goto('https://login.microsoftonline.com/', { 
+      waitUntil: 'domcontentloaded',
       timeout: CONFIG.timeout 
     });
 
@@ -74,58 +77,51 @@ async function verifyOffice365(email, password) {
     // Click Next button
     await page.click('input[type="submit"]');
     
-    // Wait for password field
-    await page.waitForSelector('input[type="password"]', { timeout: CONFIG.timeout });
-    await page.fill('input[type="password"]', password);
-    
-    // Click Sign in button
-    await page.click('input[type="submit"]');
-    
-    // Wait for response (either success or error)
+    // Wait for response (either password page or error)
     await page.waitForTimeout(3000);
     
-    // Check for error messages
-    const errorSelectors = [
-      '[id*="error"]',
-      '[class*="error"]',
-      '[data-bind*="error"]',
-      'text=/incorrect|invalid|wrong|denied/i'
+    // Check for specific error messages indicating account doesn't exist
+    const errorPatterns = [
+      "account doesn't exist",
+      "couldn't find your account",
+      "that microsoft account doesn't exist",
+      "we couldn't find an account",
+      "this username may be incorrect",
+      "enter a valid email address, phone number, or skype name"
     ];
 
-    let hasError = false;
+    const pageContent = await page.content();
+    const pageText = pageContent.toLowerCase();
+
+    let hasAccountError = false;
     let errorMessage = '';
 
-    for (const selector of errorSelectors) {
-      try {
-        const element = await page.$(selector);
-        if (element) {
-          const text = await element.textContent();
-          if (text && text.trim()) {
-            hasError = true;
-            errorMessage = text.trim();
-            break;
-          }
-        }
-      } catch (e) {
-        // Selector not found, continue
+    for (const pattern of errorPatterns) {
+      if (pageText.includes(pattern.toLowerCase())) {
+        hasAccountError = true;
+        errorMessage = pattern;
+        break;
       }
     }
 
-    // Check if we reached the inbox (success)
+    // Check if we see password field (means account exists)
+    const passwordField = await page.$('input[type="password"]');
     const currentUrl = page.url();
-    const isInboxOrMFA = currentUrl.includes('outlook.office.com') && 
-                         (currentUrl.includes('/mail') || 
-                          currentUrl.includes('/mfa') ||
-                          currentUrl.includes('/kmsi'));
 
     await browser.close();
 
-    if (isInboxOrMFA) {
-      return { result: 'valid', details: 'Successfully authenticated' };
-    } else if (hasError) {
-      return { result: 'strong_bounce', details: errorMessage };
+    if (passwordField) {
+      // Password field appeared - account exists!
+      return { result: 'valid', details: 'Account exists - password field displayed' };
+    } else if (hasAccountError) {
+      // Specific error message about account not existing
+      return { result: 'strong_bounce', details: `Account doesn't exist: ${errorMessage}` };
+    } else if (currentUrl.includes('login.live.com') || currentUrl.includes('account.live.com')) {
+      // Redirected to password page
+      return { result: 'valid', details: 'Account exists - redirected to password page' };
     } else {
-      return { result: 'invalid', details: 'Login failed - credentials rejected' };
+      // Could not determine - might be invalid or blocked
+      return { result: 'invalid', details: 'Could not verify account existence' };
     }
 
   } catch (error) {
@@ -139,8 +135,8 @@ async function verifyOffice365(email, password) {
   }
 }
 
-// Verify Gmail email
-async function verifyGmail(email, password) {
+// Verify Gmail email existence
+async function verifyGmail(email) {
   const browser = await playwright.chromium.launch({
     headless: CONFIG.headless,
     proxy: CONFIG.proxy,
@@ -157,9 +153,9 @@ async function verifyGmail(email, password) {
     
     console.log(`  📧 Testing Gmail: ${email}`);
     
-    // Navigate to Gmail
-    await page.goto('https://mail.google.com/', { 
-      waitUntil: 'networkidle',
+    // Navigate to Gmail login
+    await page.goto('https://accounts.google.com/signin/v2/identifier', { 
+      waitUntil: 'domcontentloaded',
       timeout: CONFIG.timeout 
     });
 
@@ -168,59 +164,56 @@ async function verifyGmail(email, password) {
     await page.fill('input[type="email"]', email);
     
     // Click Next button
-    await page.click('#identifierNext, button:has-text("Next")');
-    
-    // Wait for password field
-    await page.waitForSelector('input[type="password"]', { timeout: CONFIG.timeout });
-    await page.fill('input[type="password"]', password);
-    
-    // Click Next button
-    await page.click('#passwordNext, button:has-text("Next")');
+    const nextButton = await page.$('#identifierNext');
+    if (nextButton) {
+      await nextButton.click();
+    } else {
+      // Try alternative selector
+      await page.click('button:has-text("Next")');
+    }
     
     // Wait for response
     await page.waitForTimeout(3000);
     
     // Check for error messages
-    const errorSelectors = [
-      '[aria-live="polite"]',
-      '[jsname="B34EJ"]',
-      'text=/couldn\'t find|wrong password|incorrect|invalid/i'
+    const errorPatterns = [
+      "couldn't find your google account",
+      "enter a valid email or phone number",
+      "wrong email"
     ];
 
-    let hasError = false;
+    const pageContent = await page.content();
+    const pageText = pageContent.toLowerCase();
+
+    let hasAccountError = false;
     let errorMessage = '';
 
-    for (const selector of errorSelectors) {
-      try {
-        const element = await page.$(selector);
-        if (element) {
-          const text = await element.textContent();
-          if (text && text.trim()) {
-            hasError = true;
-            errorMessage = text.trim();
-            break;
-          }
-        }
-      } catch (e) {
-        // Selector not found, continue
+    for (const pattern of errorPatterns) {
+      if (pageText.includes(pattern.toLowerCase())) {
+        hasAccountError = true;
+        errorMessage = pattern;
+        break;
       }
     }
 
-    // Check if we reached the inbox (success)
+    // Check if we reached password page
+    const passwordField = await page.$('input[type="password"]');
     const currentUrl = page.url();
-    const isInboxOrMFA = currentUrl.includes('mail.google.com') && 
-                         (currentUrl.includes('/mail') || 
-                          currentUrl.includes('/challenge') ||
-                          currentUrl.includes('/signin/v2'));
 
     await browser.close();
 
-    if (isInboxOrMFA && !hasError) {
-      return { result: 'valid', details: 'Successfully authenticated' };
-    } else if (hasError) {
-      return { result: 'strong_bounce', details: errorMessage };
+    if (passwordField) {
+      // Password field appeared - account exists!
+      return { result: 'valid', details: 'Account exists - password field displayed' };
+    } else if (hasAccountError) {
+      // Specific error about account not found
+      return { result: 'strong_bounce', details: `Account doesn't exist: ${errorMessage}` };
+    } else if (currentUrl.includes('/signin/v2/challenge') || currentUrl.includes('/signin/v2/pwd')) {
+      // Redirected to password/challenge page
+      return { result: 'valid', details: 'Account exists - redirected to password page' };
     } else {
-      return { result: 'invalid', details: 'Login failed - credentials rejected' };
+      // Could not determine
+      return { result: 'invalid', details: 'Could not verify account existence' };
     }
 
   } catch (error) {
@@ -244,9 +237,9 @@ async function processJob(job) {
 
   try {
     if (job.provider === 'office365') {
-      verificationResult = await verifyOffice365(job.email, job.password);
+      verificationResult = await verifyOffice365(job.email);
     } else if (job.provider === 'gmail') {
-      verificationResult = await verifyGmail(job.email, job.password);
+      verificationResult = await verifyGmail(job.email);
     } else {
       verificationResult = {
         result: 'error',
@@ -291,7 +284,7 @@ async function processJob(job) {
 
 // Main worker loop
 async function workerLoop() {
-  console.log('\n⏳ Polling for new jobs...');
+  process.stdout.write('.');
 
   try {
     // Get next job from API
@@ -300,8 +293,6 @@ async function workerLoop() {
     if (response.data.success && response.data.job) {
       const job = response.data.job;
       await processJob(job);
-    } else {
-      process.stdout.write('.');
     }
   } catch (error) {
     if (error.response) {
@@ -320,11 +311,11 @@ async function workerLoop() {
 // Print statistics
 function printStats() {
   const uptime = Math.floor((Date.now() - stats.startTime) / 1000);
-  console.log('\n📊 Statistics:');
+  console.log('\n\n📊 Statistics:');
   console.log(`  Uptime: ${uptime}s`);
   console.log(`  Processed: ${stats.processed}`);
-  console.log(`  Valid: ${stats.valid}`);
-  console.log(`  Invalid: ${stats.invalid}`);
+  console.log(`  Valid (exists): ${stats.valid}`);
+  console.log(`  Invalid (bounces): ${stats.invalid}`);
   console.log(`  Errors: ${stats.errors}`);
 }
 
@@ -346,5 +337,6 @@ setInterval(printStats, 60000);
 
 // Start worker
 console.log('✅ Worker initialized successfully');
-console.log('⏳ Starting worker loop...\n');
+console.log('⏳ Starting worker loop...');
+console.log('⏳ Polling for new jobs...\n');
 workerLoop();

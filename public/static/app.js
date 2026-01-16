@@ -143,7 +143,7 @@ async function submitEmails() {
   const input = document.getElementById('email-input').value.trim();
   
   if (!input) {
-    alert('Please enter at least one email:password pair');
+    alert('Please enter at least one email address');
     return;
   }
 
@@ -151,17 +151,14 @@ async function submitEmails() {
   const emails = [];
 
   for (const line of lines) {
-    const parts = line.trim().split(':');
-    if (parts.length >= 2) {
-      emails.push({
-        email: parts[0].trim(),
-        password: parts.slice(1).join(':').trim()
-      });
+    const email = line.trim();
+    if (email && email.includes('@')) {
+      emails.push(email);
     }
   }
 
   if (emails.length === 0) {
-    alert('No valid email:password pairs found. Use format: email:password');
+    alert('No valid email addresses found. Please enter valid emails (e.g., user@gmail.com)');
     return;
   }
 
