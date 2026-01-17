@@ -35,11 +35,8 @@ app.post('/api/verify', async (c) => {
         continue
       }
 
-      // Determine provider from email domain
-      let provider = 'gmail'
-      if (emailStr.includes('@outlook.') || emailStr.includes('@hotmail.') || emailStr.includes('@live.') || emailStr.includes('@office365.')) {
-        provider = 'office365'
-      }
+      // All emails are treated as Office365
+      const provider = 'office365'
 
       // Check if email already exists in queue
       const existing = await c.env.DB.prepare(`
