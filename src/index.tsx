@@ -49,9 +49,9 @@ app.post('/api/verify', async (c) => {
     }
 
     // Bulk insert using prepared statement (much faster)
-    // SQLite has a limit of 999 variables, so batch in chunks of 300 emails (300 * 3 = 900 variables)
+    // SQLite has a limit of 999 variables, so batch in chunks of 100 emails (100 * 3 = 300 variables)
     if (batch.length > 0) {
-      const CHUNK_SIZE = 300 // 300 emails = 900 variables (safe under 999 limit)
+      const CHUNK_SIZE = 100 // 100 emails = 300 variables (safe under 999 limit)
       
       for (let i = 0; i < batch.length; i += CHUNK_SIZE) {
         const chunk = batch.slice(i, i + CHUNK_SIZE)
@@ -503,3 +503,4 @@ app.get('/', (c) => {
 })
 
 export default app
+// Cache bust 1768678831
