@@ -49,17 +49,22 @@ app.post('/api/verify', async (c) => {
     }
 
     // Bulk insert using prepared statement (much faster)
+    // SQLite has a limit of 999 variables, so batch in chunks of 300 emails (300 * 3 = 900 variables)
     if (batch.length > 0) {
-      // Insert all at once with a single query
-      const placeholders = batch.map(() => '(?, ?, ?)').join(',')
-      const values = batch.flatMap(email => [email, provider, 'pending'])
+      const CHUNK_SIZE = 300 // 300 emails = 900 variables (safe under 999 limit)
       
-      const query = `
-        INSERT OR IGNORE INTO verification_queue (email, provider, status)
-        VALUES ${placeholders}
-      `
-      
-      await c.env.DB.prepare(query).bind(...values).run()
+      for (let i = 0; i < batch.length; i += CHUNK_SIZE) {
+        const chunk = batch.slice(i, i + CHUNK_SIZE)
+        const placeholders = chunk.map(() => '(?, ?, ?)').join(',')
+        const values = chunk.flatMap(email => [email, provider, 'pending'])
+        
+        const query = `
+          INSERT OR IGNORE INTO verification_queue (email, provider, status)
+          VALUES ${placeholders}
+        `
+        
+        await c.env.DB.prepare(query).bind(...values).run()
+      }
       
       // Return success for all
       for (const email of batch) {
@@ -78,7 +83,12 @@ app.post('/api/verify', async (c) => {
     })
   } catch (error) {
     console.error('Error queuing emails:', error)
-    return c.json({ error: 'Failed to queue emails' }, 500)
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+    return c.json({ 
+      error: 'Failed to queue emails', 
+      details: errorMessage,
+      stack: error instanceof Error ? error.stack : undefined
+    }, 500)
   }
 })
 
