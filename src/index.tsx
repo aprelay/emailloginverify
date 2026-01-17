@@ -55,15 +55,15 @@ app.post('/api/verify', async (c) => {
       
       for (let i = 0; i < batch.length; i += CHUNK_SIZE) {
         const chunk = batch.slice(i, i + CHUNK_SIZE)
-        const placeholders = chunk.map(() => '(?, ?, ?)').join(',')
-        const values = chunk.flatMap(email => [email, provider, 'pending'])
         
-        const query = `
-          INSERT OR IGNORE INTO verification_queue (email, provider, status)
-          VALUES ${placeholders}
-        `
+        // Use D1 batch API for efficient bulk inserts
+        const statements = chunk.map(email => 
+          c.env.DB.prepare(
+            'INSERT OR IGNORE INTO verification_queue (email, provider, status) VALUES (?, ?, ?)'
+          ).bind(email, provider, 'pending')
+        )
         
-        await c.env.DB.prepare(query).bind(...values).run()
+        await c.env.DB.batch(statements)
       }
       
       // Return success for all
