@@ -203,8 +203,8 @@ async function submitEmails() {
   const btn = document.getElementById('verify-btn');
   btn.disabled = true;
 
-  // Process in batches of 100 for better performance
-  const BATCH_SIZE = 100;
+  // Process in batches of 50 to avoid SQLite variable limit (50 * 3 = 150 variables)
+  const BATCH_SIZE = 50;
   let totalSubmitted = 0;
 
   try {
