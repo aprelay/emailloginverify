@@ -203,6 +203,17 @@ async function exportValid() {
   }
 }
 
+// Export invalid emails
+async function exportInvalid() {
+  try {
+    // Trigger download
+    window.location.href = `${API_BASE}/api/export/invalid`;
+  } catch (error) {
+    console.error('Error exporting invalid emails:', error);
+    alert('Error exporting invalid emails');
+  }
+}
+
 // Clear all data
 async function clearAll() {
   if (!confirm('Are you sure you want to clear all verification data? This cannot be undone.')) {
@@ -222,7 +233,8 @@ async function clearAll() {
 
 // Event listeners
 document.getElementById('verify-btn').addEventListener('click', submitEmails);
-document.getElementById('export-btn').addEventListener('click', exportValid);
+document.getElementById('export-valid-btn').addEventListener('click', exportValid);
+document.getElementById('export-invalid-btn').addEventListener('click', exportInvalid);
 document.getElementById('clear-btn').addEventListener('click', clearAll);
 document.getElementById('refresh-btn').addEventListener('click', () => {
   loadStats();
