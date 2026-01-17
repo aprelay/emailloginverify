@@ -176,7 +176,7 @@ function loadMore() {
   loadResults(false);
 }
 
-// Submit emails for verification
+// Submit emails for verification (with batching for large lists)
 async function submitEmails() {
   const input = document.getElementById('email-input').value.trim();
   
@@ -202,24 +202,36 @@ async function submitEmails() {
 
   const btn = document.getElementById('verify-btn');
   btn.disabled = true;
-  btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Submitting...';
+
+  // Process in batches of 100 for better performance
+  const BATCH_SIZE = 100;
+  let totalSubmitted = 0;
 
   try {
-    const response = await axios.post(`${API_BASE}/api/verify`, { emails });
-    
-    if (response.data.success) {
-      alert(`Success! ${response.data.message}`);
-      document.getElementById('email-input').value = '';
-      await loadStats();
-      await loadResults(true); // Reset pagination
+    for (let i = 0; i < emails.length; i += BATCH_SIZE) {
+      const batch = emails.slice(i, i + BATCH_SIZE);
+      const progress = Math.min(i + BATCH_SIZE, emails.length);
       
-      // Start auto-refresh
-      if (!refreshInterval) {
-        refreshInterval = setInterval(() => {
-          loadStats();
-          loadResults(true); // Always reload from beginning
-        }, 5000); // Refresh every 5 seconds
+      btn.innerHTML = `<i class="fas fa-spinner fa-spin mr-2"></i>Submitting ${progress}/${emails.length}...`;
+      
+      const response = await axios.post(`${API_BASE}/api/verify`, { emails: batch });
+      
+      if (response.data.success) {
+        totalSubmitted += batch.length;
       }
+    }
+    
+    alert(`Success! ${totalSubmitted} emails queued for verification`);
+    document.getElementById('email-input').value = '';
+    await loadStats();
+    await loadResults(true);
+    
+    // Start auto-refresh
+    if (!refreshInterval) {
+      refreshInterval = setInterval(() => {
+        loadStats();
+        loadResults(true);
+      }, 5000);
     }
   } catch (error) {
     console.error('Error submitting emails:', error);

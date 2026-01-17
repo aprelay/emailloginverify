@@ -16,7 +16,7 @@ app.use('/static/*', serveStatic({ root: './public' }))
 
 // ==================== API Routes for Frontend ====================
 
-// Submit emails for verification
+// Submit emails for verification (optimized for bulk inserts)
 app.post('/api/verify', async (c) => {
   try {
     const { emails } = await c.req.json()
@@ -25,7 +25,16 @@ app.post('/api/verify', async (c) => {
       return c.json({ error: 'Invalid input. Expected array of emails.' }, 400)
     }
 
+    // Limit to 1000 emails per batch
+    if (emails.length > 1000) {
+      return c.json({ error: 'Maximum 1000 emails per batch' }, 400)
+    }
+
     const results = []
+    const provider = 'office365'
+    
+    // Batch insert using transaction for better performance
+    const batch = []
     
     for (const email of emails) {
       const emailStr = typeof email === 'string' ? email : email.email
@@ -35,41 +44,36 @@ app.post('/api/verify', async (c) => {
         continue
       }
 
-      // All emails are treated as Office365
-      const provider = 'office365'
+      // Add to batch insert
+      batch.push(emailStr)
+    }
 
-      // Check if email already exists in queue
-      const existing = await c.env.DB.prepare(`
-        SELECT id FROM verification_queue WHERE email = ? AND status IN ('pending', 'processing')
-      `).bind(emailStr).first()
-
-      if (existing) {
+    // Bulk insert using prepared statement (much faster)
+    if (batch.length > 0) {
+      // Insert all at once with a single query
+      const placeholders = batch.map(() => '(?, ?, ?)').join(',')
+      const values = batch.flatMap(email => [email, provider, 'pending'])
+      
+      const query = `
+        INSERT OR IGNORE INTO verification_queue (email, provider, status)
+        VALUES ${placeholders}
+      `
+      
+      await c.env.DB.prepare(query).bind(...values).run()
+      
+      // Return success for all
+      for (const email of batch) {
         results.push({ 
-          email: emailStr, 
+          email, 
           provider,
-          status: 'already_queued',
-          id: existing.id 
+          status: 'queued'
         })
-        continue
       }
-
-      // Insert into verification queue
-      const result = await c.env.DB.prepare(`
-        INSERT INTO verification_queue (email, provider, status)
-        VALUES (?, ?, 'pending')
-      `).bind(emailStr, provider).run()
-
-      results.push({ 
-        email: emailStr, 
-        provider,
-        status: 'queued',
-        id: result.meta.last_row_id 
-      })
     }
 
     return c.json({ 
       success: true, 
-      message: `${results.filter(r => r.status === 'queued').length} emails queued for verification`,
+      message: `${batch.length} emails queued for verification`,
       results 
     })
   } catch (error) {
