@@ -118,6 +118,31 @@ app.get('/api/stats', async (c) => {
   }
 })
 
+// Export valid emails
+app.get('/api/export/valid', async (c) => {
+  try {
+    const validEmails = await c.env.DB.prepare(`
+      SELECT email, created_at, completed_at
+      FROM verification_queue
+      WHERE result = 'valid'
+      ORDER BY completed_at DESC
+    `).all()
+
+    // Return as plain text (one email per line)
+    const emailList = validEmails.results.map((row: any) => row.email).join('\n')
+    
+    return new Response(emailList, {
+      headers: {
+        'Content-Type': 'text/plain',
+        'Content-Disposition': 'attachment; filename="valid-emails.txt"'
+      }
+    })
+  } catch (error) {
+    console.error('Error exporting valid emails:', error)
+    return c.json({ error: 'Failed to export valid emails' }, 500)
+  }
+})
+
 // Clear all data (for testing)
 app.delete('/api/clear', async (c) => {
   try {
@@ -331,6 +356,13 @@ app.get('/', (c) => {
                     >
                         <i class="fas fa-check-circle mr-2"></i>
                         Start Verification
+                    </button>
+                    <button 
+                        id="export-btn" 
+                        class="bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-6 rounded-lg transition duration-200"
+                    >
+                        <i class="fas fa-download mr-2"></i>
+                        Export Valid
                     </button>
                     <button 
                         id="clear-btn" 
