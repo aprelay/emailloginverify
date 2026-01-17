@@ -78,21 +78,55 @@ app.post('/api/verify', async (c) => {
   }
 })
 
-// Get verification status for all emails
+// Get verification status for all emails (optimized for 10k+ records)
 app.get('/api/status', async (c) => {
   try {
+    const limit = parseInt(c.req.query('limit') || '100')
+    const offset = parseInt(c.req.query('offset') || '0')
+    
     const results = await c.env.DB.prepare(`
       SELECT id, email, provider, status, result, error_message, 
              attempts, created_at, completed_at
       FROM verification_queue
-      ORDER BY created_at DESC
-      LIMIT 100
-    `).all()
+      ORDER BY id DESC
+      LIMIT ? OFFSET ?
+    `).bind(limit, offset).all()
 
-    return c.json({ success: true, data: results.results })
+    // Get total count for pagination
+    const countResult = await c.env.DB.prepare(`
+      SELECT COUNT(*) as total FROM verification_queue
+    `).first()
+
+    return c.json({ 
+      success: true, 
+      data: results.results, 
+      limit, 
+      offset,
+      total: countResult?.total || 0
+    })
   } catch (error) {
     console.error('Error fetching status:', error)
     return c.json({ error: 'Failed to fetch status' }, 500)
+  }
+})
+
+// Get recent results only (fast endpoint for dashboard)
+app.get('/api/status/recent', async (c) => {
+  try {
+    const limit = parseInt(c.req.query('limit') || '50')
+    
+    const results = await c.env.DB.prepare(`
+      SELECT id, email, provider, status, result, 
+             attempts, created_at, completed_at
+      FROM verification_queue
+      ORDER BY id DESC
+      LIMIT ?
+    `).bind(limit).all()
+
+    return c.json({ success: true, data: results.results })
+  } catch (error) {
+    console.error('Error fetching recent results:', error)
+    return c.json({ error: 'Failed to fetch recent results' }, 500)
   }
 })
 

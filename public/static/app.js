@@ -3,6 +3,9 @@ const API_BASE = '';
 
 // State
 let refreshInterval = null;
+let currentOffset = 0;
+let totalRecords = 0;
+const RECORDS_PER_PAGE = 100;
 
 // Format date
 function formatDate(dateStr) {
@@ -97,11 +100,24 @@ async function loadStats() {
   }
 }
 
-// Load results
-async function loadResults() {
+// Load results (optimized for 10k+ records)
+async function loadResults(reset = false) {
   try {
-    const response = await axios.get(`${API_BASE}/api/status`);
-    const { data } = response.data;
+    if (reset) {
+      currentOffset = 0;
+    }
+
+    // Use recent endpoint for initial load (faster)
+    const endpoint = currentOffset === 0 
+      ? `${API_BASE}/api/status/recent?limit=100`
+      : `${API_BASE}/api/status?limit=${RECORDS_PER_PAGE}&offset=${currentOffset}`;
+    
+    const response = await axios.get(endpoint);
+    const { data, total } = response.data;
+
+    if (total !== undefined) {
+      totalRecords = total;
+    }
 
     const tbody = document.getElementById('results-body');
 
@@ -132,10 +148,32 @@ async function loadResults() {
       </tr>
     `).join('');
 
-    tbody.innerHTML = rows;
+    if (reset) {
+      tbody.innerHTML = rows;
+    } else {
+      tbody.innerHTML += rows;
+    }
+
+    // Update pagination info
+    updatePaginationInfo();
   } catch (error) {
     console.error('Error loading results:', error);
   }
+}
+
+// Update pagination info
+function updatePaginationInfo() {
+  const loadedRecords = currentOffset + RECORDS_PER_PAGE;
+  const displayCount = Math.min(loadedRecords, totalRecords);
+  
+  // You can add a pagination info element to the HTML if needed
+  console.log(`Loaded ${displayCount} of ${totalRecords} records`);
+}
+
+// Load more results
+function loadMore() {
+  currentOffset += RECORDS_PER_PAGE;
+  loadResults(false);
 }
 
 // Submit emails for verification
@@ -173,14 +211,14 @@ async function submitEmails() {
       alert(`Success! ${response.data.message}`);
       document.getElementById('email-input').value = '';
       await loadStats();
-      await loadResults();
+      await loadResults(true); // Reset pagination
       
       // Start auto-refresh
       if (!refreshInterval) {
         refreshInterval = setInterval(() => {
           loadStats();
-          loadResults();
-        }, 3000);
+          loadResults(true); // Always reload from beginning
+        }, 5000); // Refresh every 5 seconds
       }
     }
   } catch (error) {
@@ -238,15 +276,15 @@ document.getElementById('export-invalid-btn').addEventListener('click', exportIn
 document.getElementById('clear-btn').addEventListener('click', clearAll);
 document.getElementById('refresh-btn').addEventListener('click', () => {
   loadStats();
-  loadResults();
+  loadResults(true); // Reset to first page
 });
 
 // Initial load
 loadStats();
-loadResults();
+loadResults(true);
 
-// Auto-refresh every 5 seconds
+// Auto-refresh every 10 seconds (reduced from 5 for better performance with large datasets)
 setInterval(() => {
   loadStats();
-  loadResults();
-}, 5000);
+  loadResults(true); // Always reload from beginning
+}, 10000);
